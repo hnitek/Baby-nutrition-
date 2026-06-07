@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { analyzeMeal, assessDay, assessWeek } from './api.js'
-import { fetchAllMeals, dbInsert, dbUpdate, dbDelete } from './db.js'
+import { fetchAllMeals, dbInsert, dbUpdate, dbDelete, fetchAssessment, saveAssessment } from './db.js'
 
 const SUPABASE_ENABLED = !!(
   import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -10,6 +10,13 @@ const MEAL_TYPES = ['Śniadanie', 'II Śniadanie', 'Obiad', 'Podwieczorek', 'Kol
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function weekKey() {
+  const d = new Date()
+  const day = d.getDay() || 7
+  d.setDate(d.getDate() - day + 1)
+  return `week-${d.toISOString().slice(0, 10)}`
 }
 
 function loadStorage() {
@@ -226,7 +233,7 @@ export default function App() {
   const todayMeals = data[today]?.meals || []
 
   const [dayAssessment, setDayAssessment] = useState(
-    () => localStorage.getItem(`baby-nutrition-day-${todayKey()}`) || ''
+    () => (!SUPABASE_ENABLED ? localStorage.getItem(`baby-nutrition-day-${todayKey()}`) : '') || ''
   )
   const [weekAssessment, setWeekAssessment] = useState('')
 
@@ -237,10 +244,16 @@ export default function App() {
       if (!SUPABASE_ENABLED) return
       setSyncStatus('syncing')
       try {
-        const rows = await fetchAllMeals()
+        const [rows, dayText, weekText] = await Promise.all([
+          fetchAllMeals(),
+          fetchAssessment(`day-${todayKey()}`),
+          fetchAssessment(weekKey()),
+        ])
         const remote = rowsToData(rows)
         setData(remote)
         saveStorage(remote)
+        if (dayText) setDayAssessment(dayText)
+        if (weekText) setWeekAssessment(weekText)
         setSyncStatus('idle')
       } catch {
         setSyncStatus('error')
@@ -335,7 +348,11 @@ export default function App() {
     try {
       const text = await assessDay(todayMeals, today)
       setDayAssessment(text)
-      localStorage.setItem(`baby-nutrition-day-${today}`, text)
+      if (SUPABASE_ENABLED) {
+        saveAssessment(`day-${today}`, text).catch(() => {})
+      } else {
+        localStorage.setItem(`baby-nutrition-day-${today}`, text)
+      }
     } finally {
       setAssessLoading(false)
     }
@@ -350,6 +367,9 @@ export default function App() {
         .map(([date, val]) => ({ date, meals: val.meals || [] }))
       const text = await assessWeek(days)
       setWeekAssessment(text)
+      if (SUPABASE_ENABLED) {
+        saveAssessment(weekKey(), text).catch(() => {})
+      }
     } finally {
       setAssessLoading(false)
     }
