@@ -40,6 +40,8 @@ jobs:
         working-directory: baby-nutrition
         env:
           VITE_WORKER_URL: ${{ secrets.VITE_WORKER_URL }}
+          VITE_APP_PIN: ${{ secrets.VITE_APP_PIN }}
+          VITE_API_SECRET: ${{ secrets.VITE_API_SECRET }}
         run: npm run build
 
       - name: Upload artifact
