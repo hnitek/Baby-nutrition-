@@ -265,6 +265,11 @@ export default function App() {
     return t
   }, [todayMeals])
 
+  function copyMeals() {
+    const lines = todayMeals.map(m => `${m.type} (${m.time}): ${m.description}`).join('\n')
+    navigator.clipboard?.writeText(lines)
+  }
+
   async function addMeal() {
     if (!description.trim()) return
     const meal = {
@@ -523,7 +528,7 @@ export default function App() {
                 style={styles.textarea}
                 value={description}
                 onChange={e => setDescription(e.target.value)}
-                placeholder='np. "jajecznica z 3 jajek ze szpinakiem i masłem"'
+                placeholder='np. "owsianka ~100g z mlekiem i bananem, zjedzone w całości"'
                 onKeyDown={e => e.key === 'Enter' && e.ctrlKey && addMeal()}
               />
               <select style={styles.select} value={mealType} onChange={e => setMealType(e.target.value)}>
@@ -549,7 +554,16 @@ export default function App() {
             )}
 
             <div style={styles.card}>
-              <div style={styles.sectionTitle}>Posiłki — {today}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <div style={{ ...styles.sectionTitle, marginBottom: 0 }}>Posiłki — {today}</div>
+                {todayMeals.length > 0 && (
+                  <button onClick={copyMeals} style={{
+                    background: 'none', border: '1.5px solid #fed7aa', borderRadius: '10px',
+                    padding: '5px 10px', fontSize: '13px', fontWeight: 700,
+                    color: '#c2410c', cursor: 'pointer', fontFamily: "'Nunito', sans-serif",
+                  }}>📋 Kopiuj</button>
+                )}
+              </div>
               {todayMeals.length === 0 ? (
                 <div style={styles.emptyState}>
                   🌱 Brak posiłków. Dodaj pierwszy posiłek córeczki!
