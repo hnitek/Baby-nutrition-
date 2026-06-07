@@ -1,0 +1,488 @@
+import React, { useState, useEffect, useCallback } from 'react'
+import { analyzeMeal, assessDay, assessWeek } from './api.js'
+
+const MEAL_TYPES = ['Śniadanie', 'II Śniadanie', 'Obiad', 'Podwieczorek', 'Kolacja']
+
+const DAILY_NORMS = {
+  kalorie:     { label: 'Kalorie',      unit: 'kcal', max: 1150, color: '#f59e0b' },
+  bialko:      { label: 'Białko',       unit: 'g',    max: 15,   color: '#10b981' },
+  zelazo:      { label: 'Żelazo',       unit: 'mg',   max: 7,    color: '#ef4444' },
+  wapn:        { label: 'Wapń',         unit: 'mg',   max: 700,  color: '#3b82f6' },
+  witD:        { label: 'Wit. D',       unit: 'mcg',  max: 15,   color: '#8b5cf6' },
+  witC:        { label: 'Wit. C',       unit: 'mg',   max: 40,   color: '#f97316' },
+  cynk:        { label: 'Cynk',         unit: 'mg',   max: 3,    color: '#06b6d4' },
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function loadStorage() {
+  try {
+    return JSON.parse(localStorage.getItem('baby-nutrition-data') || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function saveStorage(data) {
+  localStorage.setItem('baby-nutrition-data', JSON.stringify(data))
+}
+
+function ProgressBar({ label, unit, value, max, color }) {
+  const pct = Math.min(100, Math.round((value / max) * 100))
+  const over = value > max
+  return (
+    <div style={{ marginBottom: '10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '3px', color: '#555' }}>
+        <span style={{ fontWeight: 600 }}>{label}</span>
+        <span style={{ color: over ? '#ef4444' : '#333' }}>
+          {value.toFixed(1)} / {max} {unit} {over ? '⚠️' : ''}
+        </span>
+      </div>
+      <div style={{ background: '#e5e7eb', borderRadius: '99px', height: '10px', overflow: 'hidden' }}>
+        <div style={{
+          width: `${pct}%`,
+          height: '100%',
+          background: over ? '#ef4444' : color,
+          borderRadius: '99px',
+          transition: 'width 0.5s ease',
+        }} />
+      </div>
+    </div>
+  )
+}
+
+function MealCard({ meal, onDelete }) {
+  const n = meal.nutrients
+  return (
+    <div style={{
+      background: '#fffbf5',
+      border: '1px solid #fde68a',
+      borderRadius: '14px',
+      padding: '14px 16px',
+      marginBottom: '10px',
+      boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <span style={{
+            background: '#fef3c7',
+            color: '#92400e',
+            borderRadius: '8px',
+            padding: '2px 8px',
+            fontSize: '12px',
+            fontWeight: 700,
+            marginRight: '8px',
+          }}>{meal.type}</span>
+          <span style={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>{meal.description}</span>
+        </div>
+        <button onClick={onDelete} style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#9ca3af', fontSize: '18px', lineHeight: 1, padding: '0 4px',
+        }}>×</button>
+      </div>
+      {n ? (
+        <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {[
+            { k: 'kalorie', l: 'kcal' },
+            { k: 'bialko', l: 'g białka' },
+            { k: 'zelazo', l: 'mg Fe' },
+            { k: 'wapn', l: 'mg Ca' },
+            { k: 'witD', l: 'mcg D' },
+          ].map(({ k, l }) => n[k] != null && (
+            <span key={k} style={{
+              background: '#f0fdf4', color: '#065f46',
+              borderRadius: '8px', padding: '2px 8px', fontSize: '12px', fontWeight: 600,
+            }}>{n[k]} {l}</span>
+          ))}
+          {n.uwagi && (
+            <span style={{ width: '100%', fontSize: '12px', color: '#6b7280', marginTop: '4px', fontStyle: 'italic' }}>
+              💡 {n.uwagi}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div style={{ marginTop: '8px', fontSize: '12px', color: '#9ca3af' }}>⏳ Analizowanie...</div>
+      )}
+    </div>
+  )
+}
+
+export default function App() {
+  const [tab, setTab] = useState('today')
+  const [data, setData] = useState(loadStorage)
+  const [description, setDescription] = useState('')
+  const [mealType, setMealType] = useState('Śniadanie')
+  const [loading, setLoading] = useState(false)
+  const [dayAssessment, setDayAssessment] = useState('')
+  const [weekAssessment, setWeekAssessment] = useState('')
+  const [assessLoading, setAssessLoading] = useState(false)
+
+  const today = todayKey()
+  const todayMeals = data[today]?.meals || []
+
+  useEffect(() => { saveStorage(data) }, [data])
+
+  const totals = useCallback(() => {
+    const t = { kalorie: 0, bialko: 0, tluszcze: 0, weglowodany: 0,
+      zelazo: 0, wapn: 0, witD: 0, witC: 0, cynk: 0, blonnik: 0 }
+    todayMeals.forEach(m => {
+      if (m.nutrients) {
+        Object.keys(t).forEach(k => { t[k] += m.nutrients[k] ?? 0 })
+      }
+    })
+    return t
+  }, [todayMeals])
+
+  async function addMeal() {
+    if (!description.trim()) return
+    const meal = {
+      id: Date.now(),
+      type: mealType,
+      description: description.trim(),
+      time: new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }),
+      nutrients: null,
+    }
+    setData(prev => ({
+      ...prev,
+      [today]: { meals: [...(prev[today]?.meals || []), meal] },
+    }))
+    setDescription('')
+    setLoading(true)
+    try {
+      const nutrients = await analyzeMeal(meal.description, meal.type)
+      setData(prev => ({
+        ...prev,
+        [today]: {
+          meals: (prev[today]?.meals || []).map(m =>
+            m.id === meal.id ? { ...m, nutrients } : m
+          ),
+        },
+      }))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function deleteMeal(id) {
+    setData(prev => ({
+      ...prev,
+      [today]: { meals: (prev[today]?.meals || []).filter(m => m.id !== id) },
+    }))
+  }
+
+  async function handleAssessDay() {
+    setAssessLoading(true)
+    try {
+      const text = await assessDay(todayMeals, today)
+      setDayAssessment(text)
+    } finally {
+      setAssessLoading(false)
+    }
+  }
+
+  async function handleAssessWeek() {
+    setAssessLoading(true)
+    try {
+      const days = Object.entries(data)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .slice(0, 7)
+        .map(([date, val]) => ({ date, meals: val.meals || [] }))
+      const text = await assessWeek(days)
+      setWeekAssessment(text)
+    } finally {
+      setAssessLoading(false)
+    }
+  }
+
+  const t = totals()
+
+  const styles = {
+    root: {
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #fef9f0 0%, #fdf0e8 100%)',
+      fontFamily: "'Nunito', sans-serif",
+      padding: '0 0 40px 0',
+    },
+    header: {
+      background: 'linear-gradient(135deg, #f97316 0%, #fb923c 100%)',
+      color: '#fff',
+      padding: '24px 20px 20px',
+      textAlign: 'center',
+    },
+    h1: {
+      fontFamily: "'Playfair Display', serif",
+      fontSize: '26px',
+      fontWeight: 700,
+      margin: 0,
+      letterSpacing: '-0.5px',
+    },
+    subtitle: { fontSize: '14px', opacity: 0.85, marginTop: '4px' },
+    tabs: {
+      display: 'flex',
+      background: '#fff',
+      borderBottom: '2px solid #fed7aa',
+      position: 'sticky',
+      top: 0,
+      zIndex: 10,
+    },
+    tab: (active) => ({
+      flex: 1,
+      padding: '14px 8px',
+      border: 'none',
+      background: active ? '#fff7ed' : '#fff',
+      color: active ? '#f97316' : '#9ca3af',
+      fontFamily: "'Nunito', sans-serif",
+      fontWeight: active ? 800 : 600,
+      fontSize: '14px',
+      cursor: 'pointer',
+      borderBottom: active ? '2px solid #f97316' : '2px solid transparent',
+      marginBottom: '-2px',
+      transition: 'all 0.2s',
+    }),
+    container: { maxWidth: '600px', margin: '0 auto', padding: '20px 16px' },
+    card: {
+      background: '#fff',
+      borderRadius: '18px',
+      padding: '20px',
+      marginBottom: '18px',
+      boxShadow: '0 2px 12px rgba(249,115,22,0.08)',
+      border: '1px solid #fde68a',
+    },
+    label: { display: 'block', fontWeight: 700, color: '#374151', marginBottom: '8px', fontSize: '14px' },
+    textarea: {
+      width: '100%',
+      minHeight: '80px',
+      border: '2px solid #fde68a',
+      borderRadius: '12px',
+      padding: '12px',
+      fontSize: '15px',
+      fontFamily: "'Nunito', sans-serif",
+      outline: 'none',
+      resize: 'vertical',
+      boxSizing: 'border-box',
+      background: '#fffbf5',
+      color: '#1f2937',
+    },
+    select: {
+      width: '100%',
+      border: '2px solid #fde68a',
+      borderRadius: '12px',
+      padding: '10px 12px',
+      fontSize: '15px',
+      fontFamily: "'Nunito', sans-serif",
+      background: '#fffbf5',
+      color: '#1f2937',
+      outline: 'none',
+      cursor: 'pointer',
+      marginTop: '10px',
+      boxSizing: 'border-box',
+    },
+    btn: (color = '#f97316', disabled = false) => ({
+      width: '100%',
+      padding: '13px',
+      background: disabled ? '#e5e7eb' : `linear-gradient(135deg, ${color}, ${color}dd)`,
+      color: disabled ? '#9ca3af' : '#fff',
+      border: 'none',
+      borderRadius: '12px',
+      fontSize: '16px',
+      fontWeight: 800,
+      fontFamily: "'Nunito', sans-serif",
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      marginTop: '12px',
+      transition: 'opacity 0.2s',
+    }),
+    sectionTitle: {
+      fontFamily: "'Playfair Display', serif",
+      fontSize: '18px',
+      color: '#92400e',
+      fontWeight: 700,
+      marginBottom: '14px',
+    },
+    assessBox: {
+      background: '#f0fdf4',
+      border: '1px solid #86efac',
+      borderRadius: '12px',
+      padding: '14px',
+      fontSize: '14px',
+      lineHeight: 1.7,
+      color: '#166534',
+      marginTop: '12px',
+      whiteSpace: 'pre-wrap',
+    },
+    historyDay: {
+      background: '#fff',
+      borderRadius: '14px',
+      padding: '14px 16px',
+      marginBottom: '12px',
+      border: '1px solid #fde68a',
+      boxShadow: '0 1px 6px rgba(0,0,0,0.05)',
+    },
+    emptyState: {
+      textAlign: 'center',
+      color: '#9ca3af',
+      padding: '40px 20px',
+      fontSize: '15px',
+    },
+  }
+
+  return (
+    <div style={styles.root}>
+      <div style={styles.header}>
+        <h1 style={styles.h1}>🍼 Dzienniczek żywieniowy</h1>
+        <div style={styles.subtitle}>dla 15-miesięcznej córeczki</div>
+      </div>
+
+      <div style={styles.tabs}>
+        {[['today', '📅 Dziś'], ['week', '📊 Tydzień'], ['history', '📚 Historia']].map(([id, label]) => (
+          <button key={id} style={styles.tab(tab === id)} onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+
+      <div style={styles.container}>
+
+        {/* ─── TAB: DZIŚ ─── */}
+        {tab === 'today' && (
+          <>
+            <div style={styles.card}>
+              <div style={styles.sectionTitle}>Dodaj posiłek</div>
+              <label style={styles.label}>Opis posiłku</label>
+              <textarea
+                style={styles.textarea}
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder='np. "jajecznica z 3 jajek ze szpinakiem i masłem"'
+                onKeyDown={e => e.key === 'Enter' && e.ctrlKey && addMeal()}
+              />
+              <select style={styles.select} value={mealType} onChange={e => setMealType(e.target.value)}>
+                {MEAL_TYPES.map(t => <option key={t}>{t}</option>)}
+              </select>
+              <button
+                style={styles.btn('#f97316', loading || !description.trim())}
+                onClick={addMeal}
+                disabled={loading || !description.trim()}
+              >
+                {loading ? '⏳ Analizuję...' : '+ Dodaj i analizuj'}
+              </button>
+            </div>
+
+            {todayMeals.length > 0 && (
+              <div style={styles.card}>
+                <div style={styles.sectionTitle}>Postęp dzienny</div>
+                {Object.entries(DAILY_NORMS).map(([key, cfg]) => (
+                  <ProgressBar key={key} label={cfg.label} unit={cfg.unit}
+                    value={t[key] ?? 0} max={cfg.max} color={cfg.color} />
+                ))}
+              </div>
+            )}
+
+            <div style={styles.card}>
+              <div style={styles.sectionTitle}>Posiłki — {today}</div>
+              {todayMeals.length === 0 ? (
+                <div style={styles.emptyState}>
+                  🌱 Brak posiłków. Dodaj pierwszy posiłek córeczki!
+                </div>
+              ) : (
+                todayMeals.map(meal => (
+                  <MealCard key={meal.id} meal={meal} onDelete={() => deleteMeal(meal.id)} />
+                ))
+              )}
+              {todayMeals.length > 0 && (
+                <>
+                  <button
+                    style={styles.btn('#059669', assessLoading || todayMeals.length === 0)}
+                    onClick={handleAssessDay}
+                    disabled={assessLoading || todayMeals.length === 0}
+                  >
+                    {assessLoading ? '⏳ Oceniam...' : '🩺 Oceń całodniową dietę'}
+                  </button>
+                  {dayAssessment && <div style={styles.assessBox}>{dayAssessment}</div>}
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ─── TAB: TYDZIEŃ ─── */}
+        {tab === 'week' && (
+          <div style={styles.card}>
+            <div style={styles.sectionTitle}>Podsumowanie tygodnia</div>
+            {Object.entries(data).length === 0 ? (
+              <div style={styles.emptyState}>📭 Brak danych. Zacznij śledzić dietę w zakładce "Dziś".</div>
+            ) : (
+              <>
+                {Object.entries(data)
+                  .sort(([a], [b]) => b.localeCompare(a))
+                  .slice(0, 7)
+                  .map(([date, val]) => {
+                    const meals = val.meals || []
+                    const totalKcal = meals.reduce((s, m) => s + (m.nutrients?.kalorie ?? 0), 0)
+                    const totalFe = meals.reduce((s, m) => s + (m.nutrients?.zelazo ?? 0), 0)
+                    return (
+                      <div key={date} style={styles.historyDay}>
+                        <div style={{ fontWeight: 700, color: '#92400e', marginBottom: '6px' }}>
+                          📅 {date}
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                          {meals.length} posiłków · {totalKcal.toFixed(0)} kcal · {totalFe.toFixed(1)} mg Fe
+                        </div>
+                        <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                          {meals.map(m => (
+                            <span key={m.id} style={{
+                              background: '#fff7ed', color: '#c2410c',
+                              borderRadius: '6px', padding: '2px 7px', fontSize: '12px',
+                            }}>{m.type}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                <button
+                  style={styles.btn('#7c3aed', assessLoading)}
+                  onClick={handleAssessWeek}
+                  disabled={assessLoading}
+                >
+                  {assessLoading ? '⏳ Analizuję...' : '📊 Podsumowanie tygodniowe AI'}
+                </button>
+                {weekAssessment && <div style={styles.assessBox}>{weekAssessment}</div>}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ─── TAB: HISTORIA ─── */}
+        {tab === 'history' && (
+          <div style={styles.card}>
+            <div style={styles.sectionTitle}>Historia posiłków</div>
+            {Object.entries(data).length === 0 ? (
+              <div style={styles.emptyState}>📭 Brak historii.</div>
+            ) : (
+              Object.entries(data)
+                .sort(([a], [b]) => b.localeCompare(a))
+                .map(([date, val]) => (
+                  <div key={date} style={{ marginBottom: '20px' }}>
+                    <div style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, color: '#92400e', marginBottom: '8px', fontSize: '16px' }}>
+                      📅 {date}
+                    </div>
+                    {(val.meals || []).map(meal => (
+                      <MealCard key={meal.id} meal={meal} onDelete={() => {
+                        setData(prev => ({
+                          ...prev,
+                          [date]: { meals: (prev[date]?.meals || []).filter(m => m.id !== meal.id) },
+                        }))
+                      }} />
+                    ))}
+                    {(val.meals || []).length === 0 && (
+                      <div style={{ color: '#9ca3af', fontSize: '13px' }}>Brak posiłków</div>
+                    )}
+                  </div>
+                ))
+            )}
+          </div>
+        )}
+
+      </div>
+    </div>
+  )
+}
