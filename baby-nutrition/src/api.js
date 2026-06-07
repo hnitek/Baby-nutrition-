@@ -79,7 +79,7 @@ export async function assessWeek(days) {
 Podsumowanie tygodnia:
 ${daysText}
 
-Napisz po polsku podsumowanie tygodniowe w 4-6 zdaniach. Oceń regularne posiłki, kaloryczność, różnorodność. Daj 2-3 konkretne wskazówki na następny tydzień. Bądź motywujący dla rodzica.`
+Napisz po polsku podsumowanie tygodniowe w 4-6 zdaniach. Oceń regularność posiłków, kaloryczność, różnorodność. Daj 2-3 konkretne wskazówki na następny tydzień. Bądź motywujący dla rodzica.`
 
   return await callClaude(prompt, 800)
 }
