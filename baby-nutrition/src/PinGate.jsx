@@ -1,47 +1,33 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 
 const CORRECT_PIN = import.meta.env.VITE_APP_PIN || '1234'
-
-function PinDots({ length, filled }) {
-  return (
-    <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', margin: '28px 0' }}>
-      {Array.from({ length }).map((_, i) => (
-        <div key={i} style={{
-          width: '16px', height: '16px', borderRadius: '50%',
-          background: i < filled ? '#f97316' : 'transparent',
-          border: '2px solid',
-          borderColor: i < filled ? '#f97316' : '#fed7aa',
-          transition: 'all 0.15s',
-        }} />
-      ))}
-    </div>
-  )
-}
 
 export default function PinGate({ onUnlock }) {
   const [pin, setPin] = useState('')
   const [shake, setShake] = useState(false)
+  const [error, setError] = useState(false)
+  const inputRef = useRef(null)
   const pinLen = CORRECT_PIN.length
 
-  function press(digit) {
-    if (pin.length >= pinLen) return
-    const next = pin + digit
-    setPin(next)
-    if (next.length === pinLen) {
-      if (next === CORRECT_PIN) {
-        setTimeout(onUnlock, 200)
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  function handleChange(e) {
+    const val = e.target.value.replace(/\D/g, '').slice(0, pinLen)
+    setPin(val)
+    setError(false)
+
+    if (val.length === pinLen) {
+      if (val === CORRECT_PIN) {
+        setTimeout(onUnlock, 150)
       } else {
         setShake(true)
-        setTimeout(() => { setPin(''); setShake(false) }, 600)
+        setError(true)
+        setTimeout(() => { setPin(''); setShake(false); setError(false) }, 700)
       }
     }
   }
-
-  function del() {
-    setPin(p => p.slice(0, -1))
-  }
-
-  const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫']
 
   return (
     <div style={{
@@ -53,69 +39,96 @@ export default function PinGate({ onUnlock }) {
       justifyContent: 'center',
       fontFamily: "'Nunito', sans-serif",
       padding: '24px',
-    }}>
-      <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-        <div style={{ fontSize: '48px', marginBottom: '8px' }}>🍼</div>
+    }}
+      onClick={() => inputRef.current?.focus()}
+    >
+      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+        <div style={{ fontSize: '52px', marginBottom: '10px' }}>🍼</div>
         <div style={{
           fontFamily: "'Playfair Display', serif",
           fontSize: '22px', fontWeight: 700, color: '#92400e',
         }}>Dzienniczek żywieniowy</div>
         <div style={{ fontSize: '14px', color: '#a78060', marginTop: '6px' }}>
-          Wprowadź PIN aby kontynuować
+          Wprowadź PIN
         </div>
       </div>
 
-      <div style={{
-        animation: shake ? 'shake 0.5s ease' : 'none',
-      }}>
-        <style>{`
-          @keyframes shake {
-            0%,100%{transform:translateX(0)}
-            20%{transform:translateX(-8px)}
-            40%{transform:translateX(8px)}
-            60%{transform:translateX(-6px)}
-            80%{transform:translateX(6px)}
-          }
-        `}</style>
-        <PinDots length={pinLen} filled={pin.length} />
-      </div>
+      <style>{`
+        @keyframes shake {
+          0%,100%{transform:translateX(0)}
+          20%{transform:translateX(-10px)}
+          40%{transform:translateX(10px)}
+          60%{transform:translateX(-7px)}
+          80%{transform:translateX(7px)}
+        }
+      `}</style>
 
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(3, 72px)',
-        gap: '12px',
-        marginTop: '8px',
+        position: 'relative',
+        animation: shake ? 'shake 0.6s ease' : 'none',
       }}>
-        {keys.map((k, i) => {
-          if (k === '') return <div key={i} />
-          const isDel = k === '⌫'
-          return (
-            <button
-              key={i}
-              onClick={() => isDel ? del() : press(k)}
-              style={{
-                width: '72px', height: '72px', borderRadius: '50%',
-                border: '2px solid',
-                borderColor: isDel ? '#e5e7eb' : '#fde68a',
-                background: isDel ? '#f9fafb' : '#fff',
-                color: isDel ? '#9ca3af' : '#374151',
-                fontSize: isDel ? '22px' : '24px',
-                fontWeight: 700,
-                fontFamily: "'Nunito', sans-serif",
-                cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.07)',
-                transition: 'transform 0.1s, background 0.1s',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-              onMouseDown={e => e.currentTarget.style.transform = 'scale(0.93)'}
-              onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-              onTouchStart={e => e.currentTarget.style.transform = 'scale(0.93)'}
-              onTouchEnd={e => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              {k}
-            </button>
-          )
-        })}
+        {/* Niewidoczny input — uruchamia klawiaturę systemową */}
+        <input
+          ref={inputRef}
+          type="tel"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={pin}
+          onChange={handleChange}
+          maxLength={pinLen}
+          autoComplete="off"
+          style={{
+            position: 'absolute',
+            opacity: 0,
+            width: '100%',
+            height: '100%',
+            top: 0,
+            left: 0,
+            cursor: 'default',
+            fontSize: '16px',
+          }}
+        />
+
+        {/* Kratki z cyferkami */}
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          cursor: 'text',
+        }}>
+          {Array.from({ length: pinLen }).map((_, i) => {
+            const filled = i < pin.length
+            const active = i === pin.length
+            return (
+              <div key={i} style={{
+                width: '52px',
+                height: '64px',
+                borderRadius: '14px',
+                border: `2px solid ${error ? '#ef4444' : active ? '#f97316' : filled ? '#fb923c' : '#fde68a'}`,
+                background: filled ? '#fff7ed' : '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '28px',
+                fontWeight: 800,
+                color: error ? '#ef4444' : '#92400e',
+                transition: 'border-color 0.15s, background 0.15s',
+                boxShadow: active ? '0 0 0 3px rgba(249,115,22,0.2)' : '0 2px 6px rgba(0,0,0,0.06)',
+              }}>
+                {filled ? '•' : ''}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {error && (
+        <div style={{ marginTop: '16px', color: '#ef4444', fontSize: '14px', fontWeight: 600 }}>
+          Nieprawidłowy PIN
+        </div>
+      )}
+
+      <div style={{ marginTop: '28px', color: '#c4a882', fontSize: '13px' }}>
+        Dotknij aby otworzyć klawiaturę
       </div>
     </div>
   )

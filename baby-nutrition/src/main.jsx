@@ -3,12 +3,16 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import PinGate from './PinGate.jsx'
 
+function todayStr() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function Root() {
   const [unlocked, setUnlocked] = useState(
-    () => sessionStorage.getItem('pin-unlocked') === '1'
+    () => localStorage.getItem('pin-date') === todayStr()
   )
   function unlock() {
-    sessionStorage.setItem('pin-unlocked', '1')
+    localStorage.setItem('pin-date', todayStr())
     setUnlocked(true)
   }
   return unlocked ? <App /> : <PinGate onUnlock={unlock} />
