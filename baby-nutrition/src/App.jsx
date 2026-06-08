@@ -155,13 +155,14 @@ function MealCard({ meal, onDelete, onSave }) {
             autoFocus
             value={editDesc}
             onChange={e => setEditDesc(e.target.value)}
+            onInput={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
             onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) save() }}
             style={{
               width: '100%', minHeight: '70px',
               border: '2px solid #fb923c', borderRadius: '10px',
               padding: '10px', fontSize: '14px',
               fontFamily: "'Nunito', sans-serif",
-              outline: 'none', resize: 'vertical',
+              outline: 'none', resize: 'none', overflow: 'hidden',
               boxSizing: 'border-box', background: '#fff',
             }}
           />
